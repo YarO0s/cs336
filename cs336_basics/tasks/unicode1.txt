@@ -1,0 +1,4 @@
+2.1:
+  a: C-style string terminator
+  b: Printed representation preserve but does not display string termination character, while __repr__ will print binary value for string termination character
+  c: String termination character is not display while in string and does not affect anything, cause python does not use them to store string length

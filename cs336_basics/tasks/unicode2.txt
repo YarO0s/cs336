@@ -1,0 +1,4 @@
+2.2：
+  a:  UTF-8 uses the smallest amount of bytes for each character. That's why the sequence will be smaller compared to UTF-16 or UTF-32.
+  b:  It can't produce a correct result if characters encoded with more than 1 byte are present in a sequence: "Привет"
+  c:  Negative numbers does not correspond to any chars from Unicode though can't be decoded: b'\xff\xff' (representation of -1)
