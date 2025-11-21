@@ -116,8 +116,6 @@ def _get_merges(
         top_byte_pairs.append(top_byte_pair)
         merges.append((top_byte_pair[0], top_byte_pair[1]))
 
-        _merge_byte_pair(top_byte_pair, byte_pairs_pretokens, pretokens_hash_map)
-
         _update_cache(
             byte_pairs_pretokens,
             inv_byte_pairs_counts,
@@ -181,83 +179,56 @@ def _update_cache(
 
     for pretoken_hash in pretoken_hashes:
         pretoken = pretokens_hash_map[pretoken_hash]
-        last_byte_id = len(pretoken) - 1
+        last_byte_id = len(pretoken) - 2
         pretoken_count = pretoken_counts[pretoken_hash]
 
         if len(pretoken) <= 1:
             continue
 
-        for i, byte in enumerate(pretoken):
-            if byte != byte_pair_bytes:
+        for i, byte in enumerate(pretoken[:-1]):
+            if (byte, pretoken[i + 1]) != top_byte_pair:
                 continue
 
             pairs = []
 
-            if i == 0:
-                pair_byte = pretoken[i + 1]
-                pairs.append((byte_pair_bytes, pair_byte))
+            if len(pretoken) != 2:
+                if i == 0:
+                    pair_byte = pretoken[i + 2]
+                    pairs.append((byte_pair_bytes, pair_byte))
 
-                if byte_pair_bytes != pair_byte:
-                    related_pair = (top_byte_pair[-1], pair_byte)
+                    related_pair = ((pretoken[i + 1]), pair_byte)
+                    if related_pair in related_pairs:
+                        related_pairs[related_pair] += pretoken_count
+                    else:
+                        related_pairs[related_pair] = pretoken_count
+
+                elif i == last_byte_id:
+                    pair_byte = pretoken[i - 1]
+                    pairs.append((pair_byte, byte_pair_bytes))
+
+                    related_pair = (pair_byte, byte)
                     if related_pair in related_pairs:
                         related_pairs[related_pair] += pretoken_count
                     else:
                         related_pairs[related_pair] = pretoken_count
                 else:
-                    related_pair = (top_byte_pair[-1], pair_byte[0])
-                    if related_pair in related_pairs:
-                        related_pairs[related_pair] += pretoken_count
-                    else:
-                        related_pairs[related_pair] = pretoken_count
+                    preceding_pair_byte = pretoken[i - 1]
+                    trailing_pair_byte = pretoken[i + 2]
 
-            elif i == last_byte_id:
-                pair_byte = pretoken[i - 1]
-                pairs.append((pair_byte, byte_pair_bytes))
+                    pairs.append((preceding_pair_byte, byte_pair_bytes))
+                    pairs.append((byte_pair_bytes, trailing_pair_byte))
 
-                if byte_pair_bytes != pair_byte:
-                    related_pair = (pair_byte, top_byte_pair[0])
-                    if related_pair in related_pairs:
-                        related_pairs[related_pair] += pretoken_count
-                    else:
-                        related_pairs[related_pair] = pretoken_count
-                else:
-                    related_pair = (pair_byte[-1], top_byte_pair[0])
-                    if related_pair in related_pairs:
-                        related_pairs[related_pair] += pretoken_count
-                    else:
-                        related_pairs[related_pair] = pretoken_count
-            else:
-                preceding_pair_byte = pretoken[i - 1]
-                trailing_pair_byte = pretoken[i + 1]
-
-                pairs.append((preceding_pair_byte, byte_pair_bytes))
-                pairs.append((byte_pair_bytes, trailing_pair_byte))
-
-                if byte == preceding_pair_byte:
-                    preceding_related_pair = (int.to_bytes(preceding_pair_byte[-1]), top_byte_pair[0])
+                    preceding_related_pair = (preceding_pair_byte, byte)
                     if preceding_related_pair in related_pairs:
                         related_pairs[preceding_related_pair] += pretoken_count
                     else:
                         related_pairs[preceding_related_pair] = pretoken_count
-                else:
-                    # TODO: handle the case where related pairs equal to top_byte_pair and where each of them
-                    #      has been merged before like pretoken = (a,bcde,bcde,f), top_byte_pair = (bcde, bcde),
-                    #      and pretoken before merge was (a,bc,de,bc,de,f). Seems that in such case (bcde,b) and (e,bcde)
-                    #      related pairs will be taken instead of (bcde, bc) and (de, bcde).
-                    preceding_related_pair = (preceding_pair_byte, top_byte_pair[0])
-                    if preceding_related_pair in related_pairs:
-                        related_pairs[preceding_related_pair] += pretoken_count
-                    else:
-                        related_pairs[preceding_related_pair] = pretoken_count
+                        # TODO: handle the case where related pairs equal to top_byte_pair and where each of them
+                        #      has been merged before like pretoken = (a,bcde,bcde,f), top_byte_pair = (bcde, bcde),
+                        #      and pretoken before merge was (a,bc,de,bc,de,f). Seems that in such case (bcde,b) and (e,bcde)
+                        #      related pairs will be taken instead of (bcde, bc) and (de, bcde).
 
-                if byte == trailing_pair_byte:
-                    trailing_related_pair = (top_byte_pair[-1], int.to_bytes(trailing_pair_byte[0]))
-                    if trailing_related_pair in related_pairs:
-                        related_pairs[trailing_related_pair] += pretoken_count
-                    else:
-                        related_pairs[trailing_related_pair] = pretoken_count
-                else:
-                    trailing_related_pair = (top_byte_pair[-1], trailing_pair_byte)
+                    trailing_related_pair = (pretoken[i + 1], trailing_pair_byte)
                     if trailing_related_pair in related_pairs:
                         related_pairs[trailing_related_pair] += pretoken_count
                     else:
@@ -284,6 +255,8 @@ def _update_cache(
             inv_byte_pairs_counts[count].append(merge)
         else:
             inv_byte_pairs_counts[count] = [merge]
+
+    _merge_byte_pair(top_byte_pair, byte_pairs_pretokens, pretokens_hash_map)
 
     del byte_pairs_pretokens[top_byte_pair]
     del byte_pairs_counts[top_byte_pair]
