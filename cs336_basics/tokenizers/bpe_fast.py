@@ -10,11 +10,9 @@ def train(
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     dataset = ds.BPEDemo(input_path)
     rows = dataset.all_rows(dataset.demo_filepath)
-
     byte_pairs_pretokens, inv_byte_pairs_counts, byte_pairs_counts, pretokens_counts, pretokens_hash_map = _pretokenize(
         rows
     )
-
     vocab = _init_vocab()
     num_merges = vocab_size - len(vocab) - len(special_tokens)
     merges = _get_merges(
@@ -199,20 +197,35 @@ def _update_cache(
                 pair_byte = pretoken[i + 1]
                 pairs.append((byte_pair_bytes, pair_byte))
 
-                related_pair = (top_byte_pair[-1], pair_byte)
-                if related_pair in related_pairs:
-                    related_pairs[related_pair] += pretoken_count
+                if byte_pair_bytes != pair_byte:
+                    related_pair = (top_byte_pair[-1], pair_byte)
+                    if related_pair in related_pairs:
+                        related_pairs[related_pair] += pretoken_count
+                    else:
+                        related_pairs[related_pair] = pretoken_count
                 else:
-                    related_pairs[related_pair] = pretoken_count
+                    related_pair = (top_byte_pair[-1], pair_byte[0])
+                    if related_pair in related_pairs:
+                        related_pairs[related_pair] += pretoken_count
+                    else:
+                        related_pairs[related_pair] = pretoken_count
+
             elif i == last_byte_id:
                 pair_byte = pretoken[i - 1]
                 pairs.append((pair_byte, byte_pair_bytes))
 
-                related_pair = (pair_byte, top_byte_pair[0])
-                if related_pair in related_pairs:
-                    related_pairs[related_pair] += pretoken_count
+                if byte_pair_bytes != pair_byte:
+                    related_pair = (pair_byte, top_byte_pair[0])
+                    if related_pair in related_pairs:
+                        related_pairs[related_pair] += pretoken_count
+                    else:
+                        related_pairs[related_pair] = pretoken_count
                 else:
-                    related_pairs[related_pair] = pretoken_count
+                    related_pair = (pair_byte[-1], top_byte_pair[0])
+                    if related_pair in related_pairs:
+                        related_pairs[related_pair] += pretoken_count
+                    else:
+                        related_pairs[related_pair] = pretoken_count
             else:
                 preceding_pair_byte = pretoken[i - 1]
                 trailing_pair_byte = pretoken[i + 1]
@@ -220,21 +233,37 @@ def _update_cache(
                 pairs.append((preceding_pair_byte, byte_pair_bytes))
                 pairs.append((byte_pair_bytes, trailing_pair_byte))
 
-                preceding_related_pair = (preceding_pair_byte, top_byte_pair[0])
-                if preceding_related_pair in related_pairs:
-                    related_pairs[preceding_related_pair] += pretoken_count
+                if byte == preceding_pair_byte:
+                    preceding_related_pair = (int.to_bytes(preceding_pair_byte[-1]), top_byte_pair[0])
+                    if preceding_related_pair in related_pairs:
+                        related_pairs[preceding_related_pair] += pretoken_count
+                    else:
+                        related_pairs[preceding_related_pair] = pretoken_count
                 else:
-                    related_pairs[preceding_related_pair] = pretoken_count
+                    # TODO: handle the case where related pairs equal to top_byte_pair and where each of them
+                    #      has been merged before like pretoken = (a,bcde,bcde,f), top_byte_pair = (bcde, bcde),
+                    #      and pretoken before merge was (a,bc,de,bc,de,f). Seems that in such case (bcde,b) and (e,bcde)
+                    #      related pairs will be taken instead of (bcde, bc) and (de, bcde).
+                    preceding_related_pair = (preceding_pair_byte, top_byte_pair[0])
+                    if preceding_related_pair in related_pairs:
+                        related_pairs[preceding_related_pair] += pretoken_count
+                    else:
+                        related_pairs[preceding_related_pair] = pretoken_count
 
-                trailing_related_pair = (top_byte_pair[-1], trailing_pair_byte)
-                if trailing_related_pair in related_pairs:
-                    related_pairs[trailing_related_pair] += pretoken_count
+                if byte == trailing_pair_byte:
+                    trailing_related_pair = (top_byte_pair[-1], int.to_bytes(trailing_pair_byte[0]))
+                    if trailing_related_pair in related_pairs:
+                        related_pairs[trailing_related_pair] += pretoken_count
+                    else:
+                        related_pairs[trailing_related_pair] = pretoken_count
                 else:
-                    related_pairs[trailing_related_pair] = pretoken_count
+                    trailing_related_pair = (top_byte_pair[-1], trailing_pair_byte)
+                    if trailing_related_pair in related_pairs:
+                        related_pairs[trailing_related_pair] += pretoken_count
+                    else:
+                        related_pairs[trailing_related_pair] = pretoken_count
 
             for pair in pairs:
-                # if pair == (b"n", b"a"):
-                #     print(f"(n, a) in {pretoken} with {pretoken_count}")
                 if pair in byte_pairs_pretokens:
                     byte_pairs_pretokens[pair].append(pretoken_hash)
                 else:
