@@ -1,6 +1,7 @@
 import os
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
+from cs336_basics.tokenizers.data import ChunkIdentifier
 from itertools import repeat
 
 import regex as re
@@ -10,15 +11,17 @@ import cs336_basics.data.datasets as ds
 
 HASH_SEED = 1
 PRETOKENIZE_PATTERN = r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
+DELIMETER = "<|endoftext|>"
 
 
 def train(
     input_path: str, vocab_size: int, special_tokens: list[str]
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    dataset = ds.BPEDemo(input_path)
-    rows = dataset.all_rows(dataset.demo_filepath)
-    byte_pairs_pretokens, inv_byte_pairs_counts, byte_pairs_counts, pretokens_counts, pretokens_hash_map = _pretokenize(
-        rows
+    ds = ChunkIdentifier(input_path, DELIMETER)
+    chunks = ds.get_chunks_positions()
+
+    byte_pairs_pretokens, inv_byte_pairs_counts, byte_pairs_counts, pretokens_counts, pretokens_hash_map = mp_pretokenize(
+        chunks, input_path, DELIMETER.encode('UTF-8')
     )
     vocab = _init_vocab()
     num_merges = vocab_size - len(vocab) - len(special_tokens)
@@ -108,10 +111,10 @@ def _pretokenize(
 
 
 def _mp_get_pretokens(chunk: tuple[int, int], path: str, delimeter: bytes):
-    # pretokens_hash_table: dict[int, tuple[bytes]] = {}
+    pretokens_hash_table: dict[int, tuple[bytes]] = {}
     pretokens_counts: dict[int, int] = {}
-    # byte_pairs_pretokens: dict[tuple[bytes, bytes], list[int]] = {}
-    # byte_pairs_counts: dict[tuple[bytes, bytes], int] = {}
+    byte_pairs_pretokens: dict[tuple[bytes, bytes], list[int]] = {}
+    byte_pairs_counts: dict[tuple[bytes, bytes], int] = {}
 
     bytes_pattern = PRETOKENIZE_PATTERN.encode("UTF-8")
 
@@ -122,6 +125,8 @@ def _mp_get_pretokens(chunk: tuple[int, int], path: str, delimeter: bytes):
         rows = data.split(delimeter)
 
         for row in rows:
+            if b"\r\n" in row:
+                row = row.replace(b"\r\n", b"\n")
             for m in re.finditer(bytes_pattern, row):
                 token = tuple(int.to_bytes(byte) for byte in row[m.start() : m.end()])
                 hasher.reset()
@@ -133,28 +138,33 @@ def _mp_get_pretokens(chunk: tuple[int, int], path: str, delimeter: bytes):
                 else:
                     pretokens_counts[token_hash] = 1
 
-        #         if token_hash not in pretokens_hash_table:
-        #             pretokens_hash_table[token_hash] = token
+                if token_hash not in pretokens_hash_table:
+                    pretokens_hash_table[token_hash] = token
 
-        # for token_hash, token in pretokens_hash_table.items():
-        #     for byte_1, byte_2 in zip(token[:-1], token[1:]):
-        #         byte_pair = (byte_1, byte_2)
+        for token_hash, token in pretokens_hash_table.items():
+            for byte_1, byte_2 in zip(token[:-1], token[1:]):
+                byte_pair = (byte_1, byte_2)
 
-        #         if byte_pair in byte_pairs_pretokens:
-        #             if token not in byte_pairs_pretokens[byte_pair]:
-        #                 byte_pairs_pretokens[byte_pair].append(token_hash)
-        #         else:
-        #             byte_pairs_pretokens[byte_pair] = [token_hash]
+                if byte_pair in byte_pairs_pretokens:
+                    if token not in byte_pairs_pretokens[byte_pair]:
+                        byte_pairs_pretokens[byte_pair].append(token_hash)
+                else:
+                    byte_pairs_pretokens[byte_pair] = [token_hash]
 
-        #         if byte_pair in byte_pairs_counts:
-        #             byte_pairs_counts[byte_pair] += pretokens_counts[token_hash]
-        #         else:
-        #             byte_pairs_counts[byte_pair] = pretokens_counts[token_hash]
-    return pretokens_counts
+                if byte_pair in byte_pairs_counts:
+                    byte_pairs_counts[byte_pair] += pretokens_counts[token_hash]
+                else:
+                    byte_pairs_counts[byte_pair] = pretokens_counts[token_hash]
+    return (pretokens_hash_table, pretokens_counts, byte_pairs_pretokens, byte_pairs_counts)
 
 
 def mp_pretokenize(chunks_offsets: list[tuple[int, int]], path: str, delimeter: bytes):
+    pretokens_hash_table: dict[int, tuple[bytes]] = {}
     pretokens_counts: dict[int, int] = Counter({})
+    byte_pairs_pretokens: dict[tuple[bytes, bytes], list[int]] = {}
+    byte_pairs_counts: dict[tuple[bytes, bytes], int] = Counter({})
+    inv_byte_pairs_counts: dict[int, list[tuple[bytes, bytes]]] = {}
+
     num_workers = len(chunks_offsets)
     if not os.path.exists(path):
         raise Exception(f"File {path} does not exist")
@@ -163,8 +173,23 @@ def mp_pretokenize(chunks_offsets: list[tuple[int, int]], path: str, delimeter: 
         for chunk, out in zip(
             chunks_offsets, executor.map(_mp_get_pretokens, chunks_offsets, repeat(path), repeat(delimeter))
         ):
-            pretokens_counts += Counter(out)
-    print("done")
+            pretokens_hash_table.update(out[0])
+            pretokens_counts += Counter(out[1])
+            byte_pairs_counts += Counter(out[3])
+
+            for byte_pair, pretokens in out[2].items():
+                if byte_pair in byte_pairs_pretokens:
+                    byte_pairs_pretokens[byte_pair].extend(pretokens)
+                else:
+                    byte_pairs_pretokens[byte_pair] = pretokens
+
+    for byte_pair, count in byte_pairs_counts.items():
+        if count in inv_byte_pairs_counts:
+            inv_byte_pairs_counts[count].append(byte_pair)
+        else:
+            inv_byte_pairs_counts[count] = [byte_pair]
+
+    return (byte_pairs_pretokens, inv_byte_pairs_counts, byte_pairs_counts, pretokens_counts, pretokens_hash_table)
 
 
 def _get_merges(
