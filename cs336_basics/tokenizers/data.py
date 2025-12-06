@@ -20,10 +20,10 @@ class ChunkIdentifier:
             cores = os.cpu_count()
             num_workers = cores if cores else 1
 
-        # if num_workers < 3:
-        #     log.warning(f"Num of workers is low: {num_workers}")
-        # else:
-        #     log.info(f"Using {num_workers} workers")
+        if num_workers < 3:
+            log.warning(f"Num of workers is low: {num_workers}")
+        else:
+            log.info(f"Using {num_workers} workers")
 
         file_size = os.path.getsize(self.path)
 

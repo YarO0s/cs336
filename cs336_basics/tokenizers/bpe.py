@@ -1,27 +1,45 @@
 import os
+import pickle
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
-from cs336_basics.tokenizers.data import ChunkIdentifier
 from itertools import repeat
 
+import pandas as pd
 import regex as re
 import xxhash
 
 import cs336_basics.data.datasets as ds
+from cs336_basics.tokenizers.data import ChunkIdentifier
 
 HASH_SEED = 1
 PRETOKENIZE_PATTERN = r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 DELIMETER = "<|endoftext|>"
 
 
+def visualize(vocab: dict[int, bytes], limit: int):
+    df = pd.DataFrame({"ids": vocab.keys(), "tokens": vocab.values()})
+    df["len"] = df.apply(lambda x: len(x.tokens), axis=1)
+    df = df.sort_values(by="len", ascending=False)
+    print(df[0:limit])
+
+
+def load(path: str) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    if not os.path.exists(path):
+        raise Exception(f"File {path} does not exist")
+
+    with open(path, "rb") as file:
+        vocab, byte_pairs = pickle.load(file)
+        return vocab, byte_pairs
+
+
 def train(
     input_path: str, vocab_size: int, special_tokens: list[str]
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     ds = ChunkIdentifier(input_path, DELIMETER)
-    chunks = ds.get_chunks_positions()
+    chunks = ds.get_chunks_positions(16)
 
-    byte_pairs_pretokens, inv_byte_pairs_counts, byte_pairs_counts, pretokens_counts, pretokens_hash_map = mp_pretokenize(
-        chunks, input_path, DELIMETER.encode('UTF-8')
+    byte_pairs_pretokens, inv_byte_pairs_counts, byte_pairs_counts, pretokens_counts, pretokens_hash_map = (
+        mp_pretokenize(chunks, input_path, DELIMETER.encode("UTF-8"))
     )
     vocab = _init_vocab()
     num_merges = vocab_size - len(vocab) - len(special_tokens)
