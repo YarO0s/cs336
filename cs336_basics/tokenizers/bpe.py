@@ -3,6 +3,7 @@ import pickle
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
+from collections.abc import Iterable, Iterator
 
 import pandas as pd
 import regex as re
@@ -14,6 +15,112 @@ from cs336_basics.tokenizers.data import ChunkIdentifier
 HASH_SEED = 1
 PRETOKENIZE_PATTERN = r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 DELIMETER = "<|endoftext|>"
+
+
+class Tokenizer:
+    def __init__(
+        self,
+        vocab: dict[int, bytes],
+        merges: list[tuple[bytes, bytes]],
+        special_tokens: list[str]|None = None
+    ):
+        self.vocab = vocab
+        self.inverted_vocab = {value: key for key, value in self.vocab.items()}
+        self.merges = merges
+        self.spec_tokens = special_tokens
+
+    @classmethod
+    def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str]|None = None):
+        if not os.path.exists(vocab_filepath):
+            raise Exception(f"Vocab file: {vocab_filepath} does not exist")
+        if not os.path.exists(merges_filepath):
+            raise Exception(f"Merges file: {merges_filepath} does not exist")
+
+        _, vocab_ext = os.path.splitext(vocab_filepath)
+        _, merges_ext = os.path.splitext(merges_filepath)
+
+        if vocab_ext != ".pickle":
+            raise Exception(f"Vocab file: {vocab_filepath} must be a pickle serialized type")
+        if merges_ext != ".pickle":
+            raise Exception(f"Merges file: {merges_filepath} must be a pickle serialized type")
+
+        if vocab_filepath == merges_filepath:
+            with open(vocab_filepath, "rb") as file:
+                vocab, merges = pickle.load(file)
+                return cls(vocab, merges, special_tokens)
+
+        vocab = None
+        merges = None
+
+        with open(vocab_filepath, "rb") as file:
+            vocab = pickle.load(file)
+        with open(merges_filepath, "rb") as file:
+            merges = pickle.load(file)
+
+        return cls(vocab, merges, special_tokens)
+
+
+    def decode(self, ids: list[int]) -> str:
+        bytes = b""
+        bytes = bytes.join(self.vocab[id] for id in ids)
+        return bytes.decode("UTF-8", errors="replace")
+
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        for text in iterable:
+            ids = self.encode(text)
+            for id in ids:
+                yield id
+
+
+    def encode(self, text: str) -> list[int]:
+        pattern = re.compile(PRETOKENIZE_PATTERN)
+        pretokens: list[tuple[bytes, ...]] = []
+        merged_pretokens: list[tuple[bytes, ...]] = []
+        tokens: list[int] = []
+
+        for m in pattern.finditer(text):
+            pretoken = tuple(int.to_bytes(byte) for byte in text[m.start() : m.end()].encode("UTF-8"))
+            pretokens.append(pretoken)
+
+        for pretoken in pretokens:
+            if len(pretoken) == 1:
+                merged_pretokens.append(pretoken)
+                continue
+
+            for merge in self.merges:
+                if set(merge).issubset(pretoken):
+                    merged_pretoken = self._merge_pretoken_bytes(pretoken, merge)
+                    pretoken = merged_pretoken
+                    if len(pretoken) == 1:
+                        break
+
+            merged_pretokens.append(pretoken)
+
+        for pretoken in merged_pretokens:
+            for byte in pretoken:
+                tokens.append(self.inverted_vocab[byte])
+
+        return tokens
+
+
+    def _merge_pretoken_bytes(self, pretoken: tuple[bytes, ...], merge: tuple[bytes, bytes]) -> tuple[bytes, ...]:
+        after_merge: list[bytes] = []
+        byte_id = 0
+
+        while byte_id < len(pretoken):
+            if byte_id + 1 == len(pretoken):
+                after_merge.append(pretoken[byte_id])
+                break
+
+            if (pretoken[byte_id], pretoken[byte_id + 1]) == merge:
+                after_merge.append(b"".join(merge))
+                byte_id += 2
+            else:
+                after_merge.append(pretoken[byte_id])
+                byte_id += 1
+
+        return tuple(after_merge)
 
 
 def visualize(vocab: dict[int, bytes], limit: int):
