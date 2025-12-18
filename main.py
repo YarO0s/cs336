@@ -1,8 +1,12 @@
 import os
 import time
-import pickle
+import json
 
 from cs336_basics.tokenizers.bpe import Tokenizer
+
+VOCAB_PATH = "/home/yaroslav/Projects/cs336/tests/fixtures/gpt2_vocab.json"
+MERGES_PATH = "/home/yaroslav/Projects/cs336/tests/fixtures/gpt2_merges.txt"
+
 
 # TODO: move logic out of main
 if __name__ == "__main__":
@@ -34,11 +38,10 @@ if __name__ == "__main__":
 #     with open(result_filepath, "wb") as file:
 #         pickle.dump((bpe_vocab, bpe_merges), file)
     tokenizer = Tokenizer.from_files(
-        "C:\\projects\\stanford-cs336\\assignment1-basics\\.results\\owt_train.pickle",
-        "C:\\projects\\stanford-cs336\\assignment1-basics\\.results\\owt_train.pickle")
+        vocab_filepath="/home/yaroslav/Projects/cs336/.results/owt_train.pickle", merges_filepath="/home/yaroslav/Projects/cs336/.results/owt_train.pickle", special_tokens=["<|endoftext|>","<|endoftext|><|endoftext|>"]
+    )
+    with open("/home/yaroslav/Projects/cs336/tests/fixtures/tinystories_sample_5M.txt") as f:
+       contents = f.read()
+       tokenizer.encode(contents)
 
-    # tokens = tokenizer.encode("hello world")
-    # print(len(tokens))
-    # print(tokens)
-    ids = [13175, 111, 921]
-    print(tokenizer.decode(ids))
+    print('end')
