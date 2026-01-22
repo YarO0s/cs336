@@ -1,15 +1,16 @@
 import os
 import pickle
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
-from collections.abc import Iterable, Iterator
 from typing import NamedTuple
-from memory_profiler import profile
 
 import pandas as pd
 import regex as re
 import xxhash
+from memory_profiler import profile
+from sympy.calculus.util import AccumBounds
 
 from cs336_basics.tokenizers.data import ChunkIdentifier
 
@@ -25,16 +26,15 @@ class PretokenPosition(NamedTuple):
 
 class Tokenizer:
     def __init__(
-        self,
-        vocab: dict[int, bytes],
-        merges: list[tuple[bytes, bytes]],
-        special_tokens: list[str]|None = None
+        self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None
     ):
         self.vocab = vocab
+        self.special_tokens = []
+        self.tokens_cache = {}
         spec_tokens_pattern = r""
 
         special_pretokens: list[tuple[bytes, ...]] = []
-        #TODO: clear the mess
+        # TODO: clear the mess
         if special_tokens:
             for special_token in special_tokens:
                 special_token = special_token.encode("UTF-8")
@@ -45,17 +45,18 @@ class Tokenizer:
 
             special_tokens.sort(reverse=True)
             for i, special_token in enumerate(special_tokens):
+                self.special_tokens.append(special_token)
                 escaped_token = re.escape(special_token) if i == 0 else f"|{re.escape(special_token)}"
                 spec_tokens_pattern += escaped_token
 
         self.special_pretokens = special_pretokens
-        self.spec_tokens_pattern = spec_tokens_pattern
+        self.spec_tokens_pattern = "(" + spec_tokens_pattern + ")"
         self.pattern = PRETOKENIZE_PATTERN
         self.inverted_vocab = {value: key for key, value in self.vocab.items()}
         self.merges = merges
 
     @classmethod
-    def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str]|None = None):
+    def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
         if not os.path.exists(vocab_filepath):
             raise Exception(f"Vocab file: {vocab_filepath} does not exist")
         if not os.path.exists(merges_filepath):
@@ -84,96 +85,108 @@ class Tokenizer:
 
         return cls(vocab, merges, special_tokens)
 
-
     def decode(self, ids: list[int]) -> str:
         bytes = b""
         bytes = bytes.join(self.vocab[id] for id in ids)
         return bytes.decode("UTF-8", errors="replace")
-
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         for text in iterable:
             ids = self.encode(text)
             yield from ids
 
-
-    # @profile
     def encode(self, text: str) -> list[int]:
-        spec_pretokens: list[tuple[tuple[bytes, ...], PretokenPosition]] = []
-        pretokens: list[tuple[bytes, ...]] = []
-        merged_pretokens: list[tuple[bytes, ...] | tuple[bytes]] = []
         tokens: list[int] = []
 
+        if not self.spec_tokens_pattern:
+            return self._get_tokens_from_text(text)
+
         if self.spec_tokens_pattern:
-            spec_tokens_pattern = re.compile(self.spec_tokens_pattern)
-            for m in spec_tokens_pattern.finditer(text):
-                spec_pretoken_position = PretokenPosition(m.start(), m.end())
-                spec_pretoken = tuple(int.to_bytes(byte) for byte in text[m.start() : m.end()].encode("UTF-8"))
-                spec_pretokens.append((spec_pretoken, spec_pretoken_position))
-
-        pattern = re.compile(self.pattern)
-        for m in pattern.finditer(text):
-            if spec_pretokens:
-                pretoken_position = PretokenPosition(m.start(), m.end())
-                pretokens, spec_pretokens = self._append_pretoken(text, pretoken_position, pretokens, spec_pretokens)
-            else:
-                pretoken = tuple(int.to_bytes(byte) for byte in text[m.start() : m.end()].encode("UTF-8"))
-                pretokens.append(pretoken)
-
-        for pretoken in pretokens:
-            if len(pretoken) == 1:
-                merged_pretokens.append(pretoken)
-                continue
-
-            if self.special_pretokens:
-                merged_pretoken = None
-                for special_pretoken in self.special_pretokens:
-                    if pretoken == special_pretoken:
-                        merged_pretoken = tuple([b"".join(pretoken)])
-
-                if merged_pretoken:
-                    merged_pretokens.append(merged_pretoken)
-                    continue
-
-            for merge in self.merges:
-                if set(merge).issubset(pretoken):
-                    merged_pretoken = self._merge_pretoken_bytes(pretoken, merge)
-                    pretoken = merged_pretoken
-                    if len(pretoken) == 1:
-                        break
-
-            merged_pretokens.append(pretoken)
-
-        for pretoken in merged_pretokens:
-            for byte in pretoken:
-                tokens.append(self.inverted_vocab[byte])
+            parts = re.split(self.spec_tokens_pattern, text)
+            for part in parts:
+                if part in self.special_tokens:
+                    tokens.append(self.inverted_vocab[part.encode("UTF-8")])
+                else:
+                    tokens.extend(self._get_tokens_from_text(part))
+        else:
+            tokens.extend(self._get_tokens_from_text(text))
 
         return tokens
 
+    def _get_tokens_from_text(self, text: str) -> list[int]:
+        tokens: list[int] = []
+
+        pattern = re.compile(self.pattern)
+        for m in pattern.finditer(text):
+            pretoken_bytes = text[m.start() : m.end()].encode("UTF-8")
+            pretoken = tuple(int.to_bytes(byte) for byte in text[m.start() : m.end()].encode("UTF-8"))
+
+            if pretoken in self.tokens_cache.keys():
+                token_ids = self.tokens_cache[pretoken]
+                tokens.extend(token_ids)
+                continue
+
+            if pretoken_bytes in self.inverted_vocab.keys():
+                token_idx = self.inverted_vocab[pretoken_bytes]
+
+                if pretoken not in self.tokens_cache.keys():
+                    self.tokens_cache[pretoken] = [token_idx]
+
+                tokens.append(token_idx)
+                continue
+
+            for merge in self.merges:
+                if set(merge).issubset(pretoken):
+                    pretoken = self._merge_pretoken_bytes(pretoken, merge)
+                    if len(pretoken) == 1:
+                        break
+
+            token_ids = []
+            for byte in pretoken:
+                token_ids.append(self.inverted_vocab[byte])
+
+            if pretoken not in self.tokens_cache.keys():
+                self.tokens_cache[pretoken] = token_ids
+
+            tokens.extend(token_ids)
+
+        return tokens
 
     def _append_pretoken(
         self,
         text: str,
         position: PretokenPosition,
         pretokens: list[tuple[bytes, ...]],
-        spec_pretokens: list[tuple[tuple[bytes, ...], PretokenPosition]]
+        spec_pretokens: list[tuple[tuple[bytes, ...], PretokenPosition]],
     ):
         for spec_pretoken, spec_position in spec_pretokens:
-            if position.start < spec_position.start and position.end > spec_position.start and position.end <= spec_position.end:
-                pretoken = tuple(int.to_bytes(byte) for byte in text[position.start : spec_position.start].encode("UTF-8"))
+            if (
+                position.start < spec_position.start
+                and position.end > spec_position.start
+                and position.end <= spec_position.end
+            ):
+                pretoken = tuple(
+                    int.to_bytes(byte) for byte in text[position.start : spec_position.start].encode("UTF-8")
+                )
                 pretokens.append(pretoken)
                 return (pretokens, spec_pretokens)
-            elif position.start >= spec_position.start and position.start < spec_position.end and position.end > spec_position.end:
+            elif (
+                position.start >= spec_position.start
+                and position.start < spec_position.end
+                and position.end > spec_position.end
+            ):
                 spec_pretokens.remove((spec_pretoken, spec_position))
                 pretokens.append(spec_pretoken)
-                pretoken_position = PretokenPosition(spec_position.end+1, position.end)
+                pretoken_position = PretokenPosition(spec_position.end + 1, position.end)
                 return self._append_pretoken(text, pretoken_position, pretokens, spec_pretokens)
             elif position.start < spec_position.start and position.end > spec_position.end:
-                pretoken = tuple(int.to_bytes(byte) for byte in text[position.start : spec_position.start].encode("UTF-8"))
+                pretoken = tuple(
+                    int.to_bytes(byte) for byte in text[position.start : spec_position.start].encode("UTF-8")
+                )
                 pretokens.append(pretoken)
                 spec_pretokens.remove((spec_pretoken, spec_position))
                 pretokens.append(spec_pretoken)
-                pretoken_position = PretokenPosition(spec_position.end+1, position.end)
+                pretoken_position = PretokenPosition(spec_position.end + 1, position.end)
                 return self._append_pretoken(text, pretoken_position, pretokens, spec_pretokens)
             elif position.start >= spec_position.start and position.end == spec_position.end:
                 spec_pretokens.remove((spec_pretoken, spec_position))
@@ -334,7 +347,7 @@ def _mp_get_pretokens(chunk: tuple[int, int], path: str, delimeter: bytes):
         rows = data.split(delimeter)
 
         for row in rows:
-            #TODO: remove all special tokens
+            # TODO: remove all special tokens
             if b"\r\n" in row:
                 row = row.replace(b"\r\n", b"\n")
             for m in re.finditer(bytes_pattern, row):
