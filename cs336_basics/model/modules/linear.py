@@ -1,14 +1,14 @@
 import torch
-
-from torch import nn
-
+import torch.nn as nn
 
 class Linear(nn.Module):
-    def __init__(self, in_features, out_features, device=None, dtype=None):
+    def __init__(self, in_features: int, out_features: int, device = None, dtype = None):
         super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.device = device
-        self.dtype = dtype
+        std = 2 / (in_features + out_features)
+        tensor = torch.empty((in_features, out_features), device=device, dtype=dtype)
+        self.params = nn.Parameter(
+            nn.init.trunc_normal_(tensor, 0, std, -3 * std, 3 * std)
+        )
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.matmul(x, self.params)
