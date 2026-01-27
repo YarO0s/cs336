@@ -31,7 +31,7 @@ def run_embedding(
     weights: Float[Tensor, " vocab_size d_model"],
     token_ids: Int[Tensor, " ..."],
 ) -> Float[Tensor, " ... d_model"]:
-    em = Embedding(vocab_size, d_model, dtype=torch.long)
+    em = Embedding(vocab_size, d_model)
     em.params = torch.nn.Parameter(weights)
     return em.forward(token_ids)
 
