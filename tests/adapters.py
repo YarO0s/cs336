@@ -11,6 +11,7 @@ from torch import Tensor
 
 from cs336_basics.tokenizers import bpe
 from cs336_basics.model.modules.linear import Linear
+from cs336_basics.model.modules.embeddings import Embedding
 
 def run_linear(
     d_in: int,
@@ -19,7 +20,8 @@ def run_linear(
     in_features: Float[Tensor, " ... d_in"],
 ) -> Float[Tensor, " ... d_out"]:
     lm = Linear(d_in, d_out)
-    lm.load_state_dict(weights)
+    wt = torch.t(weights)
+    lm.params = torch.nn.Param(wt)
     return lm.forward(in_features)
 
 
@@ -29,6 +31,10 @@ def run_embedding(
     weights: Float[Tensor, " vocab_size d_model"],
     token_ids: Int[Tensor, " ..."],
 ) -> Float[Tensor, " ... d_model"]:
+    em = Embedding(vocab_size, d_model, dtype=torch.long)
+    em.params = torch.nn.Param(weights)
+    return em.forward(token_ids)
+
     """
     Given the weights of an Embedding layer, get the embeddings for a batch of token ids.
 
