@@ -21,7 +21,7 @@ def run_linear(
 ) -> Float[Tensor, " ... d_out"]:
     lm = Linear(d_in, d_out)
     wt = torch.t(weights)
-    lm.params = torch.nn.Param(wt)
+    lm.params = torch.nn.Parameter(wt)
     return lm.forward(in_features)
 
 
@@ -32,7 +32,7 @@ def run_embedding(
     token_ids: Int[Tensor, " ..."],
 ) -> Float[Tensor, " ... d_model"]:
     em = Embedding(vocab_size, d_model, dtype=torch.long)
-    em.params = torch.nn.Param(weights)
+    em.params = torch.nn.Parameter(weights)
     return em.forward(token_ids)
 
     """
