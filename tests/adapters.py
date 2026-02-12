@@ -10,8 +10,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 from cs336_basics.tokenizers import bpe
-from cs336_basics.model.modules.linear import Linear
-from cs336_basics.model.modules.embeddings import Embedding
+from cs336_basics.model.modules.modules import Linear, Embedding, SwiGLUFF, RMSNorm, RotaryPositionalEncoing
 
 def run_linear(
     d_in: int,
@@ -73,14 +72,18 @@ def run_swiglu(
     Returns:
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
-    # Example:
-    # If your state dict keys match, you can use `load_state_dict()`
-    # swiglu.load_state_dict(weights)
-    # You can also manually assign the weights
-    # swiglu.w1.weight.data = w1_weight
-    # swiglu.w2.weight.data = w2_weight
-    # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu = SwiGLUFF(d_model, d_ff)
+    linear1 = Linear(d_ff, d_model)
+    linear1.params = torch.nn.Parameter(torch.t(w1_weight))
+    linear2 = Linear(d_model, d_ff)
+    linear2.params = torch.nn.Parameter(torch.t(w2_weight))
+    linear3 = Linear(d_ff, d_model)
+    linear3.params = torch.nn.Parameter(torch.t(w3_weight))
+    swiglu.linear1 = linear1
+    swiglu.linear2 = linear2
+    swiglu.linear3 = linear3
+
+    return swiglu.forward(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -197,7 +200,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = RotaryPositionalEncoing(theta, d_k, max_seq_len)
+    return rope.forward(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
@@ -361,22 +365,9 @@ def run_rmsnorm(
     weights: Float[Tensor, " d_model"],
     in_features: Float[Tensor, " ... d_model"],
 ) -> Float[Tensor, " ... d_model"]:
-    """Given the weights of a RMSNorm affine transform,
-    return the output of running RMSNorm on the input features.
-
-    Args:
-        d_model (int): The dimensionality of the RMSNorm input.
-        eps: (float): A value added to the denominator for numerical stability.
-        weights (Float[Tensor, "d_model"]): RMSNorm weights.
-        in_features (Float[Tensor, "... d_model"]): Input features to run RMSNorm on. Can have arbitrary leading
-            dimensions.
-
-    Returns:
-        Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
-        RMSNorm of the `in_features`.
-    """
-    raise NotImplementedError
-
+   rmsnorm = RMSNorm(d_model, eps)
+   rmsnorm.params = torch.nn.Parameter(weights)
+   return rmsnorm.forward(in_features)
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     """Given a tensor of inputs, return the output of applying SiLU
