@@ -62,27 +62,41 @@ class RMSNorm(nn.Module):
         return torch.mul(torch.div(x, rms), self.params).to(in_type)
 
 
-class RotaryPositionalEncoing(nn.Module):
+class RotaryPositionalEncoding(nn.Module):
     def __init__(self, t: float, d_k: int, max_seq_len: int, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        rope = torch.zeros(max_seq_len, d_k, 2)
-        for i in range(max_seq_len):
-            for k in range(int(d_k / 2)):
-                k_idx = k+1
-                exp = (2 * k_idx - 2) / d_k
-                theta = i+1 / (math.pow(t, exp))
 
-                rope[i][k*2][0] = math.cos(theta)
-                rope[i][k*2][1] = - math.sin(theta)
-                rope[i][k*2+1][0] = math.sin(theta)
-                rope[i][k*2+1][1] = math.cos(theta)
-        self.register_buffer("rope", torch.transpose(rope, 1, 2))
+        i = torch.arange(0, max_seq_len, dtype=torch.int32).reshape((max_seq_len, 1))
+        k = torch.arange(0, d_k/2, dtype=torch.float32)
+        k_idx = torch.stack((k, k), dim=1).flatten()
 
+        base = torch.pow(t, (-2 * k_idx)/d_k)
+        thetas = base.expand((max_seq_len, d_k)) * i
+
+        cos_t = torch.cos(thetas)
+        sin_t = torch.sin(thetas)
+
+        neg_mask = torch.ones(sin_t.shape[1])
+        neg_idx = torch.t(torch.arange(0, d_k, 2))
+        neg_mask[neg_idx] *= -1
+
+        sin_t = sin_t * neg_mask.expand((sin_t.shape))
+
+        cos_idx = torch.arange(0, d_k, dtype=torch.int64)
+
+        sin_half_even = cos_idx[0:d_k-1:2]
+        sin_half_odd = cos_idx[1:d_k:2]
+        sin_idx = torch.stack((sin_half_odd,sin_half_even), dim=1).flatten()
+
+        self.register_buffer("cos_t", cos_t)
+        self.register_buffer("sin_t", sin_t)
+        self.register_buffer("sin_idx", sin_idx)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
-        def apply_rope(input: torch.Tensor) -> torch.Tensor:
-            indexed_rope = self.get_buffer("rope")[token_positions]
-            reshaped_input = torch.reshape(input, (input.shape[0], 1, input.shape[1]))
-            return torch.sum(torch.mul(indexed_rope, reshaped_input), 1)
+        cos_t = self.get_buffer("cos_t")[token_positions]
+        sin_t = self.get_buffer("sin_t")[token_positions]
+        sin_idx = self.get_buffer("sin_idx")
 
-        return torch.vmap(apply_rope)(x)
+        sin_idx_exp = sin_idx.expand(x.shape)
+
+        return x * cos_t + torch.gather(x, 2, sin_idx_exp) * sin_t
