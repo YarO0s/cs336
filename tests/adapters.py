@@ -17,6 +17,7 @@ from cs336_basics.model.modules.modules import (
     RMSNorm,
     RotaryPositionalEncoding,
     SwiGLUFF,
+    TransformerBlock,
 )
 from cs336_basics.tokenizers import bpe
 
@@ -294,7 +295,24 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer = TransformerBlock(d_model, num_heads, d_ff, max_seq_len, theta)
+    transformer.attn.wq = torch.nn.Parameter(weights["attn.q_proj.weight"])
+    transformer.attn.wk = torch.nn.Parameter(weights["attn.k_proj.weight"])
+    transformer.attn.wv = torch.nn.Parameter(weights["attn.v_proj.weight"])
+    transformer.attn.wo = torch.nn.Parameter(weights["attn.output_proj.weight"])
+    transformer.attn_norm.params = torch.nn.Parameter(weights["ln1.weight"])
+    transformer.ff_norm.params = torch.nn.Parameter(weights["ln2.weight"])
+    l1 = Linear(1, 1)
+    l2 = Linear(1, 1)
+    l3 = Linear(1, 1)
+    l1.params = torch.nn.Parameter(torch.t(weights["ffn.w1.weight"]))
+    l2.params = torch.nn.Parameter(torch.t(weights["ffn.w2.weight"]))
+    l3.params = torch.nn.Parameter(torch.t(weights["ffn.w3.weight"]))
+    transformer.ff.linear1 = l1
+    transformer.ff.linear2 = l2
+    transformer.ff.linear3 = l3
+
+    return transformer.forward(in_features)
 
 
 def run_transformer_lm(

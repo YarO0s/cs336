@@ -9,6 +9,8 @@ from cs336_basics.model.modules import func
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, device=None, dtype=None):
         super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
         std = 2 / (in_features + out_features)
         tensor = torch.empty((in_features, out_features), device=device, dtype=dtype)
         self.params = nn.Parameter(nn.init.trunc_normal_(tensor, 0, std, -3 * std, 3 * std))
@@ -25,18 +27,17 @@ class Embedding(nn.Module):
         self.params = nn.Parameter(nn.init.trunc_normal_(tensor, 0, std, -3 * std, 3 * std))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        index = lambda a: self.params[a]
-        batched_index = torch.vmap(index)
+        batched_index = torch.vmap(lambda a: self.params[a])
         return batched_index(x)
 
 
 class SwiGLUFF(nn.Module):
     def __init__(self, d_model: int, dff: float = 8 / 3, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        dff = math.ceil((dff * d_model) / 64) * 64
+        # dff = math.ceil((dff * d_model) / 64) * 64
         self.linear1 = Linear(d_model, dff)
-        self.linear2 = Linear(d_model, dff)
-        self.linear3 = Linear(dff, d_model)
+        self.linear2 = Linear(dff, d_model)
+        self.linear3 = Linear(d_model, dff)
 
     def _swish(self, x: torch.Tensor) -> torch.Tensor:
         return torch.multiply(x, nn.functional.sigmoid(x))
@@ -56,7 +57,7 @@ class RMSNorm(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_type = x.dtype
         squared = torch.square(x.to(torch.float32))
-        rms = torch.sqrt(torch.mean(torch.add(self.eps, squared)))
+        rms = torch.sqrt(torch.mean(squared, dim=-1, keepdim=True) + self.eps)
         return torch.mul(torch.div(x, rms), self.params).to(in_type)
 
 
@@ -154,3 +155,20 @@ class MultiheadSelfAttention(nn.Module):
         attn = attn.transpose(1, 2).contiguous().reshape(batch_size, seq_len, self.num_heads * self.dk)
 
         return torch.matmul(attn, torch.t(self.wo))
+
+
+class TransformerBlock(nn.Module):
+    def __init__(
+        self, d_model: int, num_heads: int, dff: int, max_seq_len: int, theta: float = 10000, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.attn_norm = RMSNorm(d_model)
+        self.ff_norm = RMSNorm(d_model)
+        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta)
+        self.ff = SwiGLUFF(d_model, dff)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        attn_out = self.attn.forward(self.attn_norm.forward(x))
+        x = x + attn_out
+        ff_out = self.ff.forward(self.ff_norm.forward(x))
+        return x + ff_out
