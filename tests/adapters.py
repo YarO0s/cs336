@@ -9,8 +9,17 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+from cs336_basics.model.modules import func
+from cs336_basics.model.modules.modules import (
+    Embedding,
+    Linear,
+    MultiheadSelfAttention,
+    RMSNorm,
+    RotaryPositionalEncoding,
+    SwiGLUFF,
+)
 from cs336_basics.tokenizers import bpe
-from cs336_basics.model.modules.modules import Linear, Embedding, SwiGLUFF, RMSNorm, RotaryPositionalEncoding
+
 
 def run_linear(
     d_in: int,
@@ -104,7 +113,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    return func.scaled_dot_product_attention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
@@ -138,7 +147,13 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    max_seq_len = in_features.shape[-2]
+    multihead_self_attention = MultiheadSelfAttention(d_model, num_heads, max_seq_len)
+    multihead_self_attention.wq = torch.nn.Parameter(q_proj_weight)
+    multihead_self_attention.wk = torch.nn.Parameter(k_proj_weight)
+    multihead_self_attention.wv = torch.nn.Parameter(v_proj_weight)
+    multihead_self_attention.wo = torch.nn.Parameter(o_proj_weight)
+    return multihead_self_attention.forward(in_features, False)
 
 
 def run_multihead_self_attention_with_rope(
@@ -178,7 +193,12 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    multihead_self_attention = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta)
+    multihead_self_attention.wq = torch.nn.Parameter(q_proj_weight)
+    multihead_self_attention.wk = torch.nn.Parameter(k_proj_weight)
+    multihead_self_attention.wv = torch.nn.Parameter(v_proj_weight)
+    multihead_self_attention.wo = torch.nn.Parameter(o_proj_weight)
+    return multihead_self_attention.forward(in_features, True, token_positions)
 
 
 def run_rope(
@@ -365,9 +385,10 @@ def run_rmsnorm(
     weights: Float[Tensor, " d_model"],
     in_features: Float[Tensor, " ... d_model"],
 ) -> Float[Tensor, " ... d_model"]:
-   rmsnorm = RMSNorm(d_model, eps)
-   rmsnorm.params = torch.nn.Parameter(weights)
-   return rmsnorm.forward(in_features)
+    rmsnorm = RMSNorm(d_model, eps)
+    rmsnorm.params = torch.nn.Parameter(weights)
+    return rmsnorm.forward(in_features)
+
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     """Given a tensor of inputs, return the output of applying SiLU
@@ -419,7 +440,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return func.softmax(in_features, dim)
 
 
 def run_cross_entropy(
