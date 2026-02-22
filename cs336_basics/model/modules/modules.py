@@ -172,3 +172,33 @@ class TransformerBlock(nn.Module):
         x = x + attn_out
         ff_out = self.ff.forward(self.ff_norm.forward(x))
         return x + ff_out
+
+
+class TransformerLM(nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        d_model: int,
+        context_length: int,
+        num_heads: int,
+        dff: int,
+        num_layers: int,
+        theta: float = 10000,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.embeddings = Embedding(vocab_size, d_model)
+        self.transformer_blocks = []
+        self.out_norm = RMSNorm(d_model)
+        self.out_linear = Linear(d_model, vocab_size)
+
+        for _ in range(num_layers):
+            self.transformer_blocks.append(TransformerBlock(d_model, num_heads, dff, context_length))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        input = self.embeddings.forward(x)
+        for block in self.transformer_blocks:
+            input = block.forward(input)
+        out_norm = self.out_norm.forward(input)
+        return self.out_linear.forward(out_norm)

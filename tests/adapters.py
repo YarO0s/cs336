@@ -18,6 +18,7 @@ from cs336_basics.model.modules.modules import (
     RotaryPositionalEncoding,
     SwiGLUFF,
     TransformerBlock,
+    TransformerLM,
 )
 from cs336_basics.tokenizers import bpe
 
@@ -394,7 +395,30 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer = TransformerLM(vocab_size, d_model, context_length, num_heads, d_ff, num_layers, rope_theta)
+    transformer.embeddings.params = torch.nn.Parameter(weights["token_embeddings.weight"])
+
+    for i in range(len(transformer.transformer_blocks)):
+        transformer.transformer_blocks[i].attn.wq = torch.nn.Parameter(weights[f"layers.{i}.attn.q_proj.weight"])
+        transformer.transformer_blocks[i].attn.wk = torch.nn.Parameter(weights[f"layers.{i}.attn.k_proj.weight"])
+        transformer.transformer_blocks[i].attn.wv = torch.nn.Parameter(weights[f"layers.{i}.attn.v_proj.weight"])
+        transformer.transformer_blocks[i].attn.wo = torch.nn.Parameter(weights[f"layers.{i}.attn.output_proj.weight"])
+        transformer.transformer_blocks[i].attn_norm.params = torch.nn.Parameter(weights[f"layers.{i}.ln1.weight"])
+        transformer.transformer_blocks[i].ff_norm.params = torch.nn.Parameter(weights[f"layers.{i}.ln2.weight"])
+        l1 = Linear(1, 1)
+        l2 = Linear(1, 1)
+        l3 = Linear(1, 1)
+        l1.params = torch.nn.Parameter(torch.t(weights[f"layers.{i}.ffn.w1.weight"]))
+        l2.params = torch.nn.Parameter(torch.t(weights[f"layers.{i}.ffn.w2.weight"]))
+        l3.params = torch.nn.Parameter(torch.t(weights[f"layers.{i}.ffn.w3.weight"]))
+        transformer.transformer_blocks[i].ff.linear1 = l1
+        transformer.transformer_blocks[i].ff.linear2 = l2
+        transformer.transformer_blocks[i].ff.linear3 = l3
+        transformer.out_norm.params = torch.nn.Parameter(weights["ln_final.weight"])
+        transformer.out_linear.params = torch.nn.Parameter(torch.t(weights["lm_head.weight"]))
+
+    out = transformer.forward(in_indices)
+    return out
 
 
 def run_rmsnorm(
@@ -405,7 +429,9 @@ def run_rmsnorm(
 ) -> Float[Tensor, " ... d_model"]:
     rmsnorm = RMSNorm(d_model, eps)
     rmsnorm.params = torch.nn.Parameter(weights)
-    return rmsnorm.forward(in_features)
+    res = rmsnorm.forward(in_features)
+    print(res.shape)
+    return res
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
