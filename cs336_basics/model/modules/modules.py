@@ -189,10 +189,10 @@ class TransformerLM(nn.Module):
     ) -> None:
         super().__init__(*args, **kwargs)
         self.embeddings = Embedding(vocab_size, d_model)
-        self.transformer_blocks = []
         self.out_norm = RMSNorm(d_model)
         self.out_linear = Linear(d_model, vocab_size)
 
+        self.transformer_blocks = torch.nn.ModuleList([])
         for _ in range(num_layers):
             self.transformer_blocks.append(TransformerBlock(d_model, num_heads, dff, context_length))
 
