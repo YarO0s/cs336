@@ -1,5 +1,3 @@
-import math
-
 import torch
 import torch.nn as nn
 
@@ -27,17 +25,16 @@ class Embedding(nn.Module):
         self.params = nn.Parameter(nn.init.trunc_normal_(tensor, 0, std, -3 * std, 3 * std))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batched_index = torch.vmap(lambda a: self.params[a])
-        return batched_index(x)
+        return self.params[x]
 
 
 class SwiGLUFF(nn.Module):
-    def __init__(self, d_model: int, dff: float = 8 / 3, *args, **kwargs) -> None:
+    def __init__(self, d_model: int, dff: float = 8 / 3, device=None, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # dff = math.ceil((dff * d_model) / 64) * 64
-        self.linear1 = Linear(d_model, dff)
-        self.linear2 = Linear(dff, d_model)
-        self.linear3 = Linear(d_model, dff)
+        self.linear1 = Linear(d_model, dff, device=device)
+        self.linear2 = Linear(dff, d_model, device=device)
+        self.linear3 = Linear(d_model, dff, device=device)
 
     def _swish(self, x: torch.Tensor) -> torch.Tensor:
         return torch.multiply(x, nn.functional.sigmoid(x))
@@ -56,17 +53,18 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_type = x.dtype
-        squared = torch.square(x.to(torch.float32))
+        in_device = x.device
+        squared = torch.square(x.to(in_device, torch.float32))
         rms = torch.sqrt(torch.mean(squared, dim=-1, keepdim=True) + self.eps)
         return torch.mul(torch.div(x, rms), self.params).to(in_type)
 
 
 class RotaryPositionalEncoding(nn.Module):
-    def __init__(self, t: float, d_k: int, max_seq_len: int, *args, **kwargs) -> None:
+    def __init__(self, t: float, d_k: int, max_seq_len: int, device=None, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        i = torch.arange(0, max_seq_len, dtype=torch.int32).reshape((max_seq_len, 1))
-        k = torch.arange(0, d_k / 2, dtype=torch.float32)
+        i = torch.arange(0, max_seq_len, dtype=torch.int32, device=device).reshape((max_seq_len, 1))
+        k = torch.arange(0, d_k / 2, dtype=torch.float32, device=device)
         k_idx = torch.stack((k, k), dim=1).flatten()
 
         base = torch.pow(t, (-2 * k_idx) / d_k)
@@ -75,13 +73,13 @@ class RotaryPositionalEncoding(nn.Module):
         cos_t = torch.cos(thetas)
         sin_t = torch.sin(thetas)
 
-        neg_mask = torch.ones(sin_t.shape[1])
-        neg_idx = torch.t(torch.arange(0, d_k, 2))
+        neg_mask = torch.ones(sin_t.shape[1], device=device)
+        neg_idx = torch.t(torch.arange(0, d_k, 2, device=device))
         neg_mask[neg_idx] *= -1
 
         sin_t = sin_t * neg_mask.expand(sin_t.shape)
 
-        cos_idx = torch.arange(0, d_k, dtype=torch.int64)
+        cos_idx = torch.arange(0, d_k, dtype=torch.int64, device=device)
 
         sin_half_even = cos_idx[0 : d_k - 1 : 2]
         sin_half_odd = cos_idx[1:d_k:2]
@@ -116,7 +114,8 @@ class MultiheadSelfAttention(nn.Module):
         self.dk = d_model // num_heads
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
-        self.rope = RotaryPositionalEncoding(theta, self.dk, max_seq_len)
+        self.device = device
+        self.rope = RotaryPositionalEncoding(theta, self.dk, max_seq_len, device=device)
         std = 2 / (self.dk + d_model)
 
         wq_tensor = torch.empty((num_heads * self.dk, d_model), device=device, dtype=dtype)
@@ -130,7 +129,7 @@ class MultiheadSelfAttention(nn.Module):
         self.wo = torch.nn.Parameter(nn.init.trunc_normal_(wo_tensor, 0, std, -3 * std, 3 * std))
 
     def forward(self, input: torch.Tensor, apply_rope: bool = True, token_positions=None) -> torch.Tensor:
-        mask = torch.tril(torch.full((input.shape[-2], input.shape[-2]), True))
+        mask = torch.tril(torch.full((input.shape[-2], input.shape[-2]), True, device=self.device))
         batch_size = input.shape[0]
         seq_len = input.shape[-2]
 
@@ -142,7 +141,7 @@ class MultiheadSelfAttention(nn.Module):
 
         if apply_rope:
             if token_positions is None:
-                token_positions = torch.arange(0, seq_len)
+                token_positions = torch.arange(0, seq_len, device=self.device)
 
             wqx = self.rope.forward(wqx, token_positions)
             wkx = self.rope.forward(wkx, token_positions)
@@ -159,13 +158,21 @@ class MultiheadSelfAttention(nn.Module):
 
 class TransformerBlock(nn.Module):
     def __init__(
-        self, d_model: int, num_heads: int, dff: int, max_seq_len: int, theta: float = 10000, *args, **kwargs
+        self,
+        d_model: int,
+        num_heads: int,
+        dff: int,
+        max_seq_len: int,
+        theta: float = 10000,
+        device=None,
+        *args,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.attn_norm = RMSNorm(d_model)
-        self.ff_norm = RMSNorm(d_model)
-        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta)
-        self.ff = SwiGLUFF(d_model, dff)
+        self.attn_norm = RMSNorm(d_model, device=device)
+        self.ff_norm = RMSNorm(d_model, device=device)
+        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta, device=device)
+        self.ff = SwiGLUFF(d_model, dff, device=device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         attn_out = self.attn.forward(self.attn_norm.forward(x))
@@ -184,17 +191,18 @@ class TransformerLM(nn.Module):
         dff: int,
         num_layers: int,
         theta: float = 10000,
+        device=None,
         *args,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.embeddings = Embedding(vocab_size, d_model)
-        self.out_norm = RMSNorm(d_model)
-        self.out_linear = Linear(d_model, vocab_size)
+        self.embeddings = Embedding(vocab_size, d_model, device=device)
+        self.out_norm = RMSNorm(d_model, device=device)
+        self.out_linear = Linear(d_model, vocab_size, device=device)
 
         self.transformer_blocks = torch.nn.ModuleList([])
         for _ in range(num_layers):
-            self.transformer_blocks.append(TransformerBlock(d_model, num_heads, dff, context_length))
+            self.transformer_blocks.append(TransformerBlock(d_model, num_heads, dff, context_length, device=device))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         input = self.embeddings.forward(x)
