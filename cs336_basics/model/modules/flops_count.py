@@ -2,6 +2,7 @@ from time import time
 
 import torch
 
+from cs336_basics.model.modules.func import softmax
 from cs336_basics.model.modules.modules import TransformerLM
 
 vocab_size = 5025
@@ -21,7 +22,7 @@ _ = torch.matmul(one, two)
 torch.cuda.synchronize()
 
 input = torch.randint(1, vocab_size, (4, 12), device=device)
-start = time()
-transformer.forward(input)
-end = time()
-print(end - start)
+output = transformer.forward(input)
+print(input.shape)
+output, _ = torch.sort(softmax(output, -1), -1, True)
+print(output[:, :, :10])
