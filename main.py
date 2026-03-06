@@ -1,49 +1,56 @@
 import json
 import os
 import time
+import torch
 
-from cs336_basics.tokenizers.bpe import Tokenizer
+from numpy import int32
+from cs336_basics.model.data import loader
+# from cs336_basics.tokenizers.bpe import Tokenizer
 
-VOCAB_PATH = "/home/yaroslav/Projects/cs336/tests/fixtures/gpt2_vocab.json"
-MERGES_PATH = "/home/yaroslav/Projects/cs336/tests/fixtures/gpt2_merges.txt"
+# VOCAB_PATH = "/home/yaroslav/Projects/cs336/tests/fixtures/gpt2_vocab.json"
+# MERGES_PATH = "/home/yaroslav/Projects/cs336/tests/fixtures/gpt2_merges.txt"
 
 
-# TODO: move logic out of main
-if __name__ == "__main__":
-    CWD = os.getcwd()
+# # TODO: move logic out of main
+# if __name__ == "__main__":
+#     CWD = os.getcwd()
 
-    start = time.time()
+#     start = time.time()
 
-    #     # TODO: move path to env
-    #     # input_path = "C:\\projects\\datasets\\bpe_demo\\bpe_demo.txt"
-    #     input_path = "C:\\projects\\datasets\\tinystories\\TinyStories-valid.txt"
-    #     # input_path = "C:\\projects\\datasets\\tinystories\\TinyStories-train.txt"
-    #     # input_path = "C:\\projects\\datasets\\openwebtext\\owt_valid\\owt_valid.txt"
+#     #     # TODO: move path to env
+#     #     # input_path = "C:\\projects\\datasets\\bpe_demo\\bpe_demo.txt"
+#     #     input_path = "C:\\projects\\datasets\\tinystories\\TinyStories-valid.txt"
+#     #     # input_path = "C:\\projects\\datasets\\tinystories\\TinyStories-train.txt"
+#     #     # input_path = "C:\\projects\\datasets\\openwebtext\\owt_valid\\owt_valid.txt"
 
-    #     result_dir = os.path.join(CWD, ".results")
-    #     os.makedirs(result_dir, exist_ok=True)
+#     #     result_dir = os.path.join(CWD, ".results")
+#     #     os.makedirs(result_dir, exist_ok=True)
 
-    #     result_basename = os.path.basename(input_path)
-    #     result_filename, _ = os.path.splitext(result_basename)
-    #     result_filepath = os.path.join(result_dir, f"{result_filename}.pickle")
-    #     print(result_filepath)
+#     #     result_basename = os.path.basename(input_path)
+#     #     result_filename, _ = os.path.splitext(result_basename)
+#     #     result_filepath = os.path.join(result_dir, f"{result_filename}.pickle")
+#     #     print(result_filepath)
 
-    #     if os.path.exists(result_filepath):
-    #         raise Exception(f"File {result_filepath} already exists")
+#     #     if os.path.exists(result_filepath):
+#     #         raise Exception(f"File {result_filepath} already exists")
 
-    #     bpe_vocab, bpe_merges = bpe.train(input_path, 10_000, ["<|endoftext|>"])
-    #     end = time.time()
-    #     print(end - start)
+#     #     bpe_vocab, bpe_merges = bpe.train(input_path, 10_000, ["<|endoftext|>"])
+#     #     end = time.time()
+#     #     print(end - start)
 
-    #     with open(result_filepath, "wb") as file:
-    #         pickle.dump((bpe_vocab, bpe_merges), file)
-    tokenizer = Tokenizer.from_files(
-        vocab_filepath="/home/yaroslav/Projects/cs336/.results/owt_train.pickle",
-        merges_filepath="/home/yaroslav/Projects/cs336/.results/owt_train.pickle",
-        special_tokens=["<|endoftext|>", "<|endoftext|><|endoftext|>"],
-    )
-    with open("/home/yaroslav/Projects/cs336/tests/fixtures/tinystories_sample_5M.txt") as f:
-        contents = f.read()
-        tokenizer.encode(contents)
+#     #     with open(result_filepath, "wb") as file:
+#     #         pickle.dump((bpe_vocab, bpe_merges), file)
+#     tokenizer = Tokenizer.from_files(
+#         vocab_filepath="/home/yaroslav/Projects/cs336/.results/owt_train.pickle",
+#         merges_filepath="/home/yaroslav/Projects/cs336/.results/owt_train.pickle",
+#         special_tokens=["<|endoftext|>", "<|endoftext|><|endoftext|>"],
+#     )
+#     with open("/home/yaroslav/Projects/cs336/tests/fixtures/tinystories_sample_5M.txt") as f:
+#         contents = f.read()
+#         tokenizer.encode(contents)
 
-    print("end")
+#     print("end")
+
+data = torch.randint(1, 1000, (8,))
+
+loader.get_batch(data, 2, 2, "cpu")

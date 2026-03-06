@@ -35,3 +35,51 @@ def cross_entropy(inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     logits = log_sum_exp - torch.gather(shifted, -1, targets.reshape(targets.shape + (1,)))
 
     return torch.mean(logits)
+
+
+def lr_cosine_annealing(t: int, lr_max, lr_min, warmup_iters, cos_iters):
+    if t < warmup_iters:
+        return (t / warmup_iters) * lr_max
+
+    if t >= warmup_iters and t <= cos_iters:
+        cosine = math.cos((t-warmup_iters/cos_iters-warmup_iters) * math.pi)
+        return lr_min + 0.5 * (1 + cosine) * (lr_max - lr_min)
+
+    return lr_min
+
+
+def grad_clipping(params: torch.nn.parameter, max: float):
+    grads = []
+
+    for param in params:
+        if param.grad is None:
+            continue
+
+        grads.append(param.grad)
+
+    norm = torch.norm(
+        torch.norm(torch.stack([g.detach().norm() for g in grads]))
+    )
+
+    if norm > max:
+        scale = max / (norm + 1e-6)
+
+        for param in params:
+            if param.grad is not None:
+                param.grad *= scale
+
+
+def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, iteration: int, out) -> None:
+    torch.save({
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "iteration": iteration
+    }, out)
+
+def load_checkpoint(src, model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> int:
+    checkpoint = torch.load(src)
+
+    model.load_state_dict(checkpoint["model"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+
+    return checkpoint["iteration"]

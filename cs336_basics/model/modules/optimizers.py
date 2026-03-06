@@ -1,4 +1,4 @@
-from numpy.lib import math
+import math
 import torch
 
 class AdamW(torch.optim.Optimizer):
@@ -40,7 +40,10 @@ class AdamW(torch.optim.Optimizer):
 
                 lr_t = lr * math.sqrt(v_t_hat) / m_t_hat
 
-                p.data = p.data - (lr_t * m_t_new / (torch.sqrt(v_t_new) + eps))
-                p.data = p.data - (lr * w_d * p.data)
+                # p.data = p.data - (lr_t * m_t_new / (torch.sqrt(v_t_new) + eps))
+                # p.data = p.data - (lr * w_d * p.data)
+
+                p.data -= lr_t * m_t_new / (torch.sqrt(v_t_new) + eps)
+                p.data -= lr * w_d * p.data
 
                 state["t"] = t + 1
