@@ -11,7 +11,7 @@ class AdamW(torch.optim.Optimizer):
             "t": 0,
         })
 
-    def step(self) -> torch.Tensor:
+    def step(self, closure = None, device="cpu") -> None:
         for group in self.param_groups:
 
             beta_1, beta_2 = group["betas"]
@@ -26,8 +26,8 @@ class AdamW(torch.optim.Optimizer):
                 state = self.state[p]
 
                 t = state.get("t", 1)
-                m_t = state.get("m_t", torch.zeros(p.data.shape))
-                v_t = state.get("v_t", torch.zeros(p.data.shape))
+                m_t = state.get("m_t", torch.zeros(p.data.shape, device=device))
+                v_t = state.get("v_t", torch.zeros(p.data.shape, device=device))
 
                 m_t_new = beta_1 * m_t + (1 - beta_1) * p.grad
                 v_t_new = beta_2 * v_t + (1 - beta_2) * (p.grad ** 2)
@@ -39,9 +39,6 @@ class AdamW(torch.optim.Optimizer):
                 v_t_hat = 1 - math.pow(beta_2, t)
 
                 lr_t = lr * math.sqrt(v_t_hat) / m_t_hat
-
-                # p.data = p.data - (lr_t * m_t_new / (torch.sqrt(v_t_new) + eps))
-                # p.data = p.data - (lr * w_d * p.data)
 
                 p.data -= lr_t * m_t_new / (torch.sqrt(v_t_new) + eps)
                 p.data -= lr * w_d * p.data

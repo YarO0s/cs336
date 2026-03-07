@@ -32,6 +32,7 @@ def cross_entropy(inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     shifted = inputs - max_items
 
     log_sum_exp = torch.log(torch.exp(shifted).sum(dim=-1))
+
     logits = log_sum_exp - torch.gather(shifted, -1, targets.reshape(targets.shape + (1,)))
 
     return torch.mean(logits)
@@ -75,6 +76,7 @@ def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, it
         "optimizer": optimizer.state_dict(),
         "iteration": iteration
     }, out)
+
 
 def load_checkpoint(src, model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> int:
     checkpoint = torch.load(src)
