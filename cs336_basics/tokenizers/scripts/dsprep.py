@@ -38,7 +38,7 @@ def encode(config: argparse.Namespace):
 
     max_lines = 14_815_490
     batch_size = 100_000
-    batch = []
+    batch = np.array([], dtype=np.long)
     with open(config.file) as source:
         with open(target_name, "wb") as target:
             for _, line in tqdm(zip(range(14815490), source), total=max_lines):
@@ -46,7 +46,7 @@ def encode(config: argparse.Namespace):
                 batch = np.concatenate((batch, ids))
 
                 if len(batch) > batch_size:
-                    np.array(batch).tofile(target)
+                    np.array(batch, dtype=np.long).tofile(target)
                     batch = []
 
             if len(batch) > 0:

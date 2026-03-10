@@ -13,8 +13,10 @@ def main(args: list[str]):
 
     config = parser.parse_args(args)
 
-    data = np.memmap(config.data)
-    print(f"dataset size: {len(data)}")
-    print(f"dataset shape: {data.shape}")
+    data = np.memmap(config.data, dtype=np.long)
+    print(f"size: {len(data)}")
+    print(f"shape: {data.shape}")
+    print(f"sample: {data[0:1000]}")
+    print(f"dtype: {data.dtype}")
 
 main(sys.argv[1:])
