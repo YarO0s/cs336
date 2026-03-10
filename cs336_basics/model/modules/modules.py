@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 
@@ -210,3 +211,17 @@ class TransformerLM(nn.Module):
             input = block.forward(input)
         out_norm = self.out_norm.forward(input)
         return self.out_linear.forward(out_norm)
+
+    def infer(self, input, max_tokens):
+        new_tokens = max_tokens - len(input)
+
+        for i in range(new_tokens):
+            context = input[-self.out_linear.in_features:].unsqueeze(0)
+
+            data = self.forward(context)
+            probs = func.softmax(data[0, -1], -1)
+            next_id = torch.argmax(probs)
+
+            input = torch.cat([input, next_id.unsqueeze(0)])
+
+            yield next_id

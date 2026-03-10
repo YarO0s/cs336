@@ -34,7 +34,7 @@ def encode(config: argparse.Namespace):
 
     # Encode
     print("Encoding")
-    tokenizer = bpe.Tokenizer.from_files(config.vocab, config.merges, [])
+    tokenizer = bpe.Tokenizer.from_files(config.vocab, config.merges, ["<|endoftext|>"])
 
     max_lines = 14_815_490
     batch_size = 100_000
@@ -42,14 +42,14 @@ def encode(config: argparse.Namespace):
     with open(config.file) as source:
         with open(target_name, "wb") as target:
             for _, line in tqdm(zip(range(14815490), source), total=max_lines):
-                for id in tokenizer.encode_iterable(line):
-                    batch.append(id)
+                ids = tokenizer.encode(line)
+                batch = np.concatenate((batch, ids))
 
-                    if len(batch) > batch_size:
-                        np.array(batch).tofile(target)
-                        batch = []
+                if len(batch) > batch_size:
+                    np.array(batch).tofile(target)
+                    batch = []
 
-            if batch:
+            if len(batch) > 0:
                 np.array(batch).tofile(target)
 
 

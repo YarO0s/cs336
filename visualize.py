@@ -60,5 +60,5 @@ class EventsApp(App):
 if __name__ == "__main__":
     CWD = os.getcwd()
     app = EventsApp()
-    app.set_data("C:\\projects\\stanford-cs336\\assignment1-basics\\.results\\TinyStories-valid.pickle")
+    app.set_data("/mnt/c/projects/stanford-cs336/assignment1-basics/.results/TinyStories-train.pickle")
     app.run()

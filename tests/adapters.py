@@ -43,10 +43,6 @@ def run_embedding(
     weights: Float[Tensor, " vocab_size d_model"],
     token_ids: Int[Tensor, " ..."],
 ) -> Float[Tensor, " ... d_model"]:
-    em = Embedding(vocab_size, d_model)
-    em.params = torch.nn.Parameter(weights)
-    return em.forward(token_ids)
-
     """
     Given the weights of an Embedding layer, get the embeddings for a batch of token ids.
 
@@ -60,7 +56,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    em = Embedding(vocab_size, d_model)
+    em.params = torch.nn.Parameter(weights)
+    return em.forward(token_ids)
 
 
 def run_swiglu(

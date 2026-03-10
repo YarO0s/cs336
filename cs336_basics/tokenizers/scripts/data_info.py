@@ -15,5 +15,6 @@ def main(args: list[str]):
 
     data = np.memmap(config.data)
     print(f"dataset size: {len(data)}")
+    print(f"dataset shape: {data.shape}")
 
 main(sys.argv[1:])
