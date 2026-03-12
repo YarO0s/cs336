@@ -18,5 +18,7 @@ def main(args: list[str]):
     print(f"shape: {data.shape}")
     print(f"sample: {data[0:1000]}")
     print(f"dtype: {data.dtype}")
+    print(f"max item: {data.max()}")
+    print(f"min item: {data.min()}")
 
 main(sys.argv[1:])

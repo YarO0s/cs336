@@ -1,44 +1,55 @@
 import argparse
 import sys
-import numpy as np
 import torch
+import aiohttp_cors
 
-import cs336_basics.model.modules.func as f
-import cs336_basics.model.modules.modules as m
-import cs336_basics.model.modules.optimizers as o
-import cs336_basics.model.data.loader as l
+import numpy as np
 
 from cs336_basics.tokenizers.bpe import Tokenizer
+from aiohttp import web
 
+async def serve(request):
+    input = await request.json()
 
-def main(args: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog="Training script")
-    parser.add_argument("--input", type=str)
+    encoded_input = torch.tensor(bpe.encode(input["prompt"]), device=device)
 
-    config = parser.parse_args(args)
-    run(config)
-
-
-def run(config):
-    device = "cuda:0"
-    model_file = "/mnt/c/projects/datasets/models/tinystories-gpt-1/model_final.pt"
-    model_weights = "/mnt/c/projects/datasets/models/tinystories-gpt-1/check_final_1772995273_0"
-    vocab_file = "/mnt/c/projects/stanford-cs336/assignment1-basics/.results/TinyStories-train.pickle"
-
-    model = torch.load(model_file, weights_only=False)
-    model.load_state_dict(torch.load(model_weights)["model"])
-    bpe = Tokenizer.from_files(vocab_file, vocab_file)
-
-    encoded_input = torch.tensor(bpe.encode(config.input), device=device)
-
-    print(config.input, end='')
-
+    result = input["prompt"]
     for out in model.infer(encoded_input, 256):
         out_list = out.tolist()
         out_decoded = bpe.decode([out_list])
-        # print(out_decoded, end='')
-        print(f"{out_list}: {out_decoded}")
 
-    print("\n")
+        if out_decoded == "<|endoftext|>":
+            response = web.json_response({"success": True, "response": result})
+            return response
 
-main(sys.argv[1:])
+        result += out_decoded
+
+    response = web.json_response({"success": True, "response": result})
+    return response
+
+device = "cuda:0"
+model_file = "/mnt/c/projects/datasets/models/tinystories-gpt-1/model_final_delfino_warp.pt"
+model_weights = "/mnt/c/projects/datasets/models/tinystories-gpt-1/check_final_delfino_warp"
+vocab_file = "/mnt/c/projects/stanford-cs336/assignment1-basics/.results/TinyStories-train.pickle"
+
+model = torch.load(model_file, weights_only=False)
+model.load_state_dict(torch.load(model_weights)["model"])
+bpe = Tokenizer.from_files(vocab_file, vocab_file, ["<|endoftext|>"])
+print("Model initialized")
+
+app = web.Application()
+cors = aiohttp_cors.setup(app, defaults={
+    "*": aiohttp_cors.ResourceOptions(
+        allow_credentials=True,
+        expose_headers="*",
+        allow_headers="*",
+        allow_methods=["GET", "POST", "PUT", "DELETE"]
+    )
+})
+app.add_routes([web.post("/serve", serve)])
+
+for route in list(app.router.routes()):
+    cors.add(route)
+
+if __name__ == "__main__":
+    web.run_app(app)

@@ -36,7 +36,7 @@ def encode(config: argparse.Namespace):
     print("Encoding")
     tokenizer = bpe.Tokenizer.from_files(config.vocab, config.merges, ["<|endoftext|>"])
 
-    max_lines = 14_815_490
+    max_lines = 140_815_490
     batch_size = 100_000
     batch = np.array([], dtype=np.long)
     with open(config.file) as source:
@@ -47,7 +47,7 @@ def encode(config: argparse.Namespace):
 
                 if len(batch) > batch_size:
                     np.array(batch, dtype=np.long).tofile(target)
-                    batch = []
+                    batch = np.array([], dtype=np.long)
 
             if len(batch) > 0:
                 np.array(batch).tofile(target)
